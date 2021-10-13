@@ -1,0 +1,12 @@
+name: "duplicate-entries"
+version: "0.1.0"
+usage: "usage"
+description: |-
+  description
+command: "echo hello"
+useTunnel: true
+ignoreFlags: true
+hooks:
+  install: "echo installing..."
+hooks:
+  install: "echo installing something different"
