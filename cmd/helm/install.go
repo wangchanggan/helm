@@ -170,9 +170,10 @@ func newInstallCmd(c helm.Interface, out io.Writer) *cobra.Command {
 	}
 
 	cmd := &cobra.Command{
-		Use:     "install [CHART]",
-		Short:   "Install a chart archive",
-		Long:    installDesc,
+		Use:   "install [CHART]",
+		Short: "Install a chart archive",
+		Long:  installDesc,
+		// 在install命令行时，Helm 还执行了一个操作，使用kubectl port-forward临时在本地宿主机打通一个与Tiller Pod沟通的通道
 		PreRunE: func(_ *cobra.Command, _ []string) error { return setupConnection() },
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// 检查传递参数的有效性，以及是否漏传参数。
@@ -241,16 +242,22 @@ func newInstallCmd(c helm.Interface, out io.Writer) *cobra.Command {
 func (i *installCmd) run() error {
 	debug("CHART PATH: %s\n", i.chartPath)
 
+	// 查看是否填写了命名容间名称，如果没有填写则默认是default命名空间。
 	if i.namespace == "" {
 		i.namespace = defaultNamespace()
 	}
 
+	// 使用vals函数合并命令行"helm install -f myvalues.yam1"覆盖的参数，这里使用的"-f override.yaml"这种命令行传参方式就是通过vals函数实现的。
+	// 此函数将valueFiles,values等信息读取出来后，和已经加裁到内存的valuesMap做一个对比，用外部传入的参数覆盖当前内存中的参数
+	// 这样在继续进行后面的动作时，都是使用的外部命令行的最新参数列表。
 	rawVals, err := vals(i.valueFiles, i.values, i.stringValues, i.fileValues, i.certFile, i.keyFile, i.caFile)
 	if err != nil {
 		return err
 	}
 
 	// If template is specified, try to run the template.
+	// 如果在执行install命令时指定了template，这里就会根据template的名称使用go template模板库进行读取
+	// 同时也会自动渲染该模板，最终返回一个被渲染过的template对象。
 	if i.nameTemplate != "" {
 		i.name, err = generateName(i.nameTemplate)
 		if err != nil {
@@ -260,11 +267,15 @@ func (i *installCmd) run() error {
 		fmt.Printf("FINAL NAME: %s\n", i.name)
 	}
 
+	// 这检查指定的名称是否符合DNS命名规范，这个规范适用于Kubernetes各个资源的命名，算是Kubernetes各个资源部署的统一标准。
 	if msgs := validation.IsDNS1123Subdomain(i.name); i.name != "" && len(msgs) > 0 {
 		return fmt.Errorf("release name %s is invalid: %s", i.name, strings.Join(msgs, ";"))
 	}
 
 	// Check chart requirements to make sure all dependencies are present in /charts
+	// 根据前面返回的Chart本地存储路径加载对应的Chart文件。这里的Chart文件一般都是一个文件夹，里面含有values.yaml、Chart等各种文件和文件夹
+	// 该函数读取这些文件的内容后，将其初始化为一个对应的Chart，这样既能校验Chart内容的正确性也方便后面继续调用。
+	// 如果设置了.helmignore 文件，那么这个函数也会略过这些文件，不会将其序列化到Chart对象中。
 	chartRequested, err := chartutil.Load(i.chartPath)
 	if err != nil {
 		return prettyError(err)
@@ -274,6 +285,8 @@ func (i *installCmd) run() error {
 		fmt.Fprintln(os.Stderr, "WARNING: This chart is deprecated")
 	}
 
+	// 检查是否有requirements.yaml 文件，并且将声明的文件内容使用上面介绍的Chart重新下载和读取渲染函数来重新运行一遍。
+	// 全部下载完毕后，还会再使用Load函数加载内容加载。到此，内存中的Chart结构体已经包含所有需要的文本信息。
 	if req, err := chartutil.LoadRequirements(chartRequested); err == nil {
 		// If checkDependencies returns an error, we have unfulfilled dependencies.
 		// As of Helm 2.4.0, this is treated as a stopping condition:
@@ -340,6 +353,7 @@ func (i *installCmd) run() error {
 		return prettyError(err)
 	}
 
+	// 首先获取Release信息，在上步发送install请求后，Tiller的response信息内就已经含有了这些信息。
 	rel := res.GetRelease()
 	if rel == nil {
 		return nil
@@ -359,6 +373,7 @@ func (i *installCmd) run() error {
 	}
 
 	// Print the status like status command does
+	// 和install一样， 也是向Tiller发送请求，这个API的URL /hapi.services.tiller.ReleaseService/GetReleaseStatus
 	status, err := i.client.ReleaseStatus(rel.Name)
 	if err != nil {
 		return prettyError(err)

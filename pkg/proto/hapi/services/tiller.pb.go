@@ -1561,6 +1561,8 @@ func (c *releaseServiceClient) UpdateRelease(ctx context.Context, in *UpdateRele
 	return out, nil
 }
 
+// 这里调用的grpc接口名称为/hapi.services.tiller.ReleaseService/InstallRelease，也就是远程的Tiller Server接口名称
+// 然后将拼装好的InstallReleaseRequest发送出去，这个对象里面含有Chart的全部信息，最后等待服务端的返回，这样就实现了安装命令的最终发送。
 func (c *releaseServiceClient) InstallRelease(ctx context.Context, in *InstallReleaseRequest, opts ...grpc.CallOption) (*InstallReleaseResponse, error) {
 	out := new(InstallReleaseResponse)
 	err := c.cc.Invoke(ctx, "/hapi.services.tiller.ReleaseService/InstallRelease", in, out, opts...)

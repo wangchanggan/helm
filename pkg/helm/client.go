@@ -107,12 +107,15 @@ func (h *Client) InstallReleaseFromChartWithContext(ctx context.Context, chart *
 }
 
 // InstallReleaseFromChartWithContext installs a new chart and returns the release response while accepting a context.
+// 这个函数十分重要，是Client发送请求的函数。
+// 该函数会接收一大堆参数，这些参数就是Helm在执行install命令时传入的各种用户指定参数。
 func (h *Client) installReleaseFromChartWithContext(ctx context.Context, chart *chart.Chart, ns string, opts ...InstallOption) (*rls.InstallReleaseResponse, error) {
 	// apply the install options
 	reqOpts := h.opts
 	for _, opt := range opts {
 		opt(&reqOpts)
 	}
+	//将所有安装的参数统一设置到request对象中，构成结构体。
 	req := &reqOpts.instReq
 	req.Chart = chart
 	req.Namespace = ns
@@ -127,15 +130,18 @@ func (h *Client) installReleaseFromChartWithContext(ctx context.Context, chart *
 			return nil, err
 		}
 	}
+	// 将requirement.yaml中不需要的Chart从安装包结构体中移除。
 	err := chartutil.ProcessRequirementsEnabled(req.Chart, req.Values)
 	if err != nil {
 		return nil, err
 	}
+	// 将父Chart中的value设置给予Chart，这样函数就实现了父Chart向子Chart传递参数。
 	err = chartutil.ProcessRequirementsImportValues(req.Chart)
 	if err != nil {
 		return nil, err
 	}
 
+	// h.install将包装好的req发送给服务端。
 	return h.install(ctx, req)
 }
 
@@ -353,6 +359,7 @@ func (h *Client) PingTiller() error {
 // connect returns a gRPC connection to Tiller or error. The gRPC dial options
 // are constructed here.
 func (h *Client) connect(ctx context.Context) (conn *grpc.ClientConn, err error) {
+	// 设置grpc的参数，grpc.DialOption这里主要是默认30s超时时间，设置最大消息大小，默认20MB。
 	opts := []grpc.DialOption{
 		grpc.WithBlock(),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
@@ -362,6 +369,7 @@ func (h *Client) connect(ctx context.Context) (conn *grpc.ClientConn, err error)
 		}),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxMsgSize)),
 	}
+	// 根据是否启用tls选择对应的证书信息。
 	switch {
 	case h.opts.useTLS:
 		opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(h.opts.tlsConfig)))
@@ -370,6 +378,8 @@ func (h *Client) connect(ctx context.Context) (conn *grpc.ClientConn, err error)
 	}
 	ctx, cancel := context.WithTimeout(ctx, h.opts.connectTimeout)
 	defer cancel()
+	// grpc.DialContext(ctx, h.opts.host, opts...)非常重要，port-forward会建立一个本地和远程之间的连接
+	// h.opts.host就是本地的连接端口，也就是说，建立与这个地址的连接，发送的数据就会直接送达远端的Tiller Pod。
 	if conn, err = grpc.DialContext(ctx, h.opts.host, opts...); err != nil {
 		return nil, err
 	}
@@ -408,7 +418,9 @@ func (h *Client) list(ctx context.Context, req *rls.ListReleasesRequest) (*rls.L
 }
 
 // install executes tiller.InstallRelease RPC.
+// 直接将拼装好的信息调用grpc接口发送给Tiller
 func (h *Client) install(ctx context.Context, req *rls.InstallReleaseRequest) (*rls.InstallReleaseResponse, error) {
+	// 首先建立一个grpc连接
 	c, err := h.connect(ctx)
 	if err != nil {
 		return nil, err

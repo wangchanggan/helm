@@ -330,6 +330,14 @@ func markDeprecated(cmd *cobra.Command, notice string) *cobra.Command {
 	return cmd
 }
 
+// 根据默认的kubeConfig获取Kubernetes client命令行实例后，portforwarder.New(settings.TillerNamespace, client.config)调用了kubectl port-forward命令。
+// 举个例子，kubectl port-forward pod/Tiller 8888:5000这个命令就是建立一个连接
+// 首先监听本地8888端口，然后远程连接Tiller这个Pod的5000端口。
+// 也就是说，向本地8888端口发送的数据都会直接被转发到远程的TillrPod5000端口上，这样就建立了一个本地和远程容器之间的通道。
+// 而且这个通道是通过ApiServer连接的，不需要Pod向外暴露任何端口，非常安全。
+// 这里调用本地宿主机的端口是随机的，任何一个端口都可以被调用，然后被调用的端口会被指向远程的Tiller Pod
+// 函数settings.TillerHost = fmt.Sprintf("127.0.0.1:%d", tillerTunnel.Local)就是将随机选择的本地端口指定到setting结构体中。
+// 这样在执行其他函数之前，本地其实已经默默建好了与远程Tiller之间的通信链路。
 func setupConnection() error {
 	if settings.TillerHost == "" {
 		config, client, err := getKubeClient(settings.KubeContext, settings.KubeConfig)
