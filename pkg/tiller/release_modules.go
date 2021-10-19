@@ -49,6 +49,7 @@ type LocalReleaseModule struct {
 }
 
 // Create creates a release via kubeclient from provided environment
+// 将Chart内容编译成字节流，然后通过client-go无结构体提交给ApiServer
 func (m *LocalReleaseModule) Create(r *release.Release, req *services.InstallReleaseRequest, env *environment.Environment) error {
 	b := bytes.NewBufferString(r.Manifest)
 	return env.KubeClient.Create(r.Namespace, b, req.Timeout, req.Wait)

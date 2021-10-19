@@ -33,6 +33,7 @@ import (
 // InstallRelease installs a release and stores the release record.
 func (s *ReleaseServer) InstallRelease(c ctx.Context, req *services.InstallReleaseRequest) (*services.InstallReleaseResponse, error) {
 	s.Log("preparing install for %s", req.Name)
+	// 针对客户端传递过来的信息做准备，主要检查是否重名，然后对传递过来的各个参数和values.yaml进行渲染，然后拼接出Release对象。
 	rel, err := s.prepareRelease(req)
 	if err != nil {
 		s.Log("failed install prepare step: %s", err)
@@ -40,6 +41,7 @@ func (s *ReleaseServer) InstallRelease(c ctx.Context, req *services.InstallRelea
 
 		// On dry run, append the manifest contents to a failed release. This is
 		// a stop-gap until we can revisit an error backchannel post-2.0.
+		// 如果是测试场景，就仅返回渲染失败的错误信息
 		if req.DryRun && strings.HasPrefix(err.Error(), "YAML parse error") {
 			err = fmt.Errorf("%s\n%s", err, rel.Manifest)
 		}
@@ -47,6 +49,7 @@ func (s *ReleaseServer) InstallRelease(c ctx.Context, req *services.InstallRelea
 	}
 
 	s.Log("performing install for %s", req.Name)
+	// 真正进行Release安装的函数
 	res, err := s.performRelease(rel, req)
 	if err != nil {
 		s.Log("failed install perform step: %s", err)
@@ -60,16 +63,20 @@ func (s *ReleaseServer) prepareRelease(req *services.InstallReleaseRequest) (*re
 		return nil, errMissingChart
 	}
 
+	// 检查用户执行的Release名称是否唯一，如果是自动生成的，会自动保证该名称的唯一性
+	// 如果名称是用户指定的，这里会检查集群是否含有重名的Release
 	name, err := s.uniqName(req.Name, req.ReuseName)
 	if err != nil {
 		return nil, err
 	}
 
+	// 检查客户端和服务端之间的兼容性，判断客户端、服务端以及ApiServer是否兼容
 	caps, err := capabilities(s.clientset.Discovery())
 	if err != nil {
 		return nil, err
 	}
 
+	// 每一个Release默认都有一个版本号，这里就是第一个版本号
 	revision := 1
 	ts := timeconv.Now()
 	options := chartutil.ReleaseOptions{
@@ -79,15 +86,18 @@ func (s *ReleaseServer) prepareRelease(req *services.InstallReleaseRequest) (*re
 		Revision:  revision,
 		IsInstall: true,
 	}
+	// 将传入的value进行渲染，组成新的values.yaml
 	valuesToRender, err := chartutil.ToRenderValuesCaps(req.Chart, req.Values, options, caps)
 	if err != nil {
 		return nil, err
 	}
 
+	// 分离出安装资源、Hooks资源，以及将当前集群的ApiServer信息填入结构体，为下一步构造安装结构做铺垫
 	hooks, manifestDoc, notesTxt, err := s.renderResources(req.Chart, valuesToRender, req.SubNotes, caps.APIVersions)
 	if err != nil {
 		// Return a release with partial data so that client can show debugging
 		// information.
+		// 该结构体就是最终会存储的结构体，将需要安装的信息、Hooks信息和状态等内容进行初始化
 		rel := &release.Release{
 			Name:      name,
 			Namespace: req.Namespace,
@@ -142,6 +152,9 @@ func hasCRDHook(hs []*release.Hook) bool {
 }
 
 // performRelease runs a release.
+// 安装环节
+// 首先要检查Chart是否含有一些Pre-hooks, 特别是crd-install这种Hooks
+// 因为针对这种类型的Hooks, Helm 会在创建其他资源之前，第一步优先创建该资源，否则后面依赖该资源的对象都会安装失败。
 func (s *ReleaseServer) performRelease(r *release.Release, req *services.InstallReleaseRequest) (*services.InstallReleaseResponse, error) {
 	res := &services.InstallReleaseResponse{Release: r}
 	manifestDoc := []byte(r.Manifest)
@@ -238,6 +251,7 @@ func (s *ReleaseServer) performRelease(r *release.Release, req *services.Install
 	}
 
 	// post-install hooks
+	// 再次执行post-install hooks，也就是安装之后需要执行的Hooks
 	if !req.DisableHooks {
 		if err := s.execHook(r.Hooks, r.Name, r.Namespace, hooks.PostInstall, req.Timeout); err != nil {
 			msg := fmt.Sprintf("Release %q failed post-install: %s", r.Name, err)
@@ -249,6 +263,7 @@ func (s *ReleaseServer) performRelease(r *release.Release, req *services.Install
 		}
 	}
 
+	// 全部的创建流程就完成，将这个Release的状态改为Status_DEPLOYED。
 	r.Info.Status.Code = release.Status_DEPLOYED
 	if req.Description == "" {
 		r.Info.Description = "Install complete"

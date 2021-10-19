@@ -418,6 +418,8 @@ func (s *ReleaseServer) renderResources(ch *chart.Chart, values chartutil.Values
 }
 
 // recordRelease with an update operation in case reuse has been set.
+// 如果是重用名称，直接更新对应的configmap
+// 如果是新的名称，直接创建对应的configmap
 func (s *ReleaseServer) recordRelease(r *release.Release, reuse bool) {
 	if reuse {
 		if err := s.env.Releases.Update(r); err != nil {
@@ -445,14 +447,18 @@ func (s *ReleaseServer) execHook(hs []*release.Hook, name, namespace, hook strin
 		}
 	}
 
+	// 首先根据不同的权重，将各种Hooks排序，依次将Hooks做成一个可执行数组
 	executingHooks = sortByHookWeight(executingHooks)
 
+	// 遍历所有的Hooks
 	for _, h := range executingHooks {
+		// 筛选before-hook-creation，看看是否需要提前执行Hooks的删除
 		if err := s.deleteHookByPolicy(h, hooks.BeforeHookCreation, name, namespace, hook, kubeCli); err != nil {
 			return err
 		}
 
 		b := bytes.NewBufferString(h.Manifest)
+		// 将剩余的资源，特别是CRD资源装载到集群中
 		if err := kubeCli.Create(namespace, b, timeout, false); err != nil {
 			s.Log("warning: Release %s %s %s failed: %s", name, hook, h.Path, err)
 			return err
@@ -462,11 +468,15 @@ func (s *ReleaseServer) execHook(hs []*release.Hook, name, namespace, hook strin
 		b.WriteString(h.Manifest)
 
 		// We can't watch CRDs, but need to wait until they reach the established state before continuing
+		// 保证pre-install需要安装的资源必须等待安装成功后才能继续下一步
 		if hook != hooks.CRDInstall {
+			// 在这里一直等待资源创建成功
 			if err := kubeCli.WatchUntilReady(namespace, b, timeout, false); err != nil {
 				s.Log("warning: Release %s %s %s could not complete: %s", name, hook, h.Path, err)
 				// If a hook is failed, checkout the annotation of the hook to determine whether the hook should be deleted
 				// under failed condition. If so, then clear the corresponding resource object in the hook
+				// 如果Hooks失败，检查Hooks的注释，以确定是否应该删除该Hooks
+				// 在Hooks失败的情况下，清除Hooks中相应的资源
 				if err := s.deleteHookByPolicy(h, hooks.HookFailed, name, namespace, hook, kubeCli); err != nil {
 					return err
 				}
