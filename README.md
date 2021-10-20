@@ -18,6 +18,9 @@ Source Code From https://github.com/helm/helm/archive/refs/tags/v2.17.0.tar.gz
     -   [Helm Install Server](#helm-install-server)
         -   [prepareRelease](#preparerelease)
         -   [performRelease](#performrelease)
+    -   [Helm Update](#helm-update)
+        -   [update命令的定义](#update命令的定义)
+        -   [Update服务端的实现](#update服务端的实现)
 
 ## Helm Install Client
 cmd/helm/install.go:172
@@ -116,3 +119,22 @@ pkg/tiller/release_modules.go:53
 6.将Release信息记录到Kubernetes集群中，目前Helm默认的方式是记录到kube-system下的configmap中。configmap的名称就是Release的名字，后面的点对应着它的版本号。比如v1就是第一次安装的版本，后面的labels也能表明些身份，比如OWNER=TILLER，代表它是Tiller创建的。
 
 7.基本信息记录完毕后，将剩余Chart谊染后的资源文件提交给Kubernetes ApiServer。
+
+## Helm Update
+### update命令的定义
+cmd\helm\upgrade.go:131
+
+1.首先创建与Tiller的联通通道。
+
+2.检查传入参数的合法性。
+
+3.下载对应的Chart包。
+
+4.将对应的传入setting值构建成一个Release结构体。
+
+5.调用 Tiller update接口。
+
+6.检查Release状态。
+
+### Update服务端的实现
+pkg\tiller\release_update.go:34,276

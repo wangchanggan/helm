@@ -30,6 +30,7 @@ import (
 )
 
 // UpdateRelease takes an existing release and new information, and upgrades the release.
+// 首先需要准备更新，先下载依赖项，将所有依赖的Chart下载到本地，然后根据传递过来的参数覆盖原values，最后渲染出一个成型的yaml文件。
 func (s *ReleaseServer) UpdateRelease(c ctx.Context, req *services.UpdateReleaseRequest) (*services.UpdateReleaseResponse, error) {
 	if err := validateReleaseName(req.Name); err != nil {
 		s.Log("updateRelease: Release name is invalid: %s", req.Name)
@@ -283,12 +284,15 @@ func (s *ReleaseServer) performUpdate(originalRelease, updatedRelease *release.R
 
 	// pre-upgrade hooks
 	if !req.DisableHooks {
+		// 运行pre-upgrade的Hooks。
 		if err := s.execHook(updatedRelease.Hooks, updatedRelease.Name, updatedRelease.Namespace, hooks.PreUpgrade, req.Timeout); err != nil {
 			return res, err
 		}
 	} else {
 		s.Log("update hooks disabled for %s", req.Name)
 	}
+	// 将渲染好的yaml提交给ApiServer，如果此次更新yaml模板对应的资源没有发生变化，Kubernetes不会更新对应的资源
+	// 这个操作是在KubernetesApiServer层面执行的，Helm Client和Server并没有对此做特别的操作。
 	if err := s.ReleaseModule.Update(originalRelease, updatedRelease, req, s.env); err != nil {
 		msg := fmt.Sprintf("Upgrade %q failed: %s", updatedRelease.Name, err)
 		s.Log("warning: %s", msg)
@@ -301,6 +305,7 @@ func (s *ReleaseServer) performUpdate(originalRelease, updatedRelease *release.R
 
 	// post-upgrade hooks
 	if !req.DisableHooks {
+		// 运行post-update的Hooks。
 		if err := s.execHook(updatedRelease.Hooks, updatedRelease.Name, updatedRelease.Namespace, hooks.PostUpgrade, req.Timeout); err != nil {
 			return res, err
 		}
@@ -309,6 +314,7 @@ func (s *ReleaseServer) performUpdate(originalRelease, updatedRelease *release.R
 	originalRelease.Info.Status.Code = release.Status_SUPERSEDED
 	s.recordRelease(originalRelease, true)
 
+	// 更改Release的安装状态。
 	updatedRelease.Info.Status.Code = release.Status_DEPLOYED
 	if req.Description == "" {
 		updatedRelease.Info.Description = "Upgrade complete"
