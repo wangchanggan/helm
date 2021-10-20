@@ -85,7 +85,10 @@ func (cfgmaps *ConfigMaps) Get(key string) (*rspb.Release, error) {
 // List fetches all releases and returns the list releases such
 // that filter(release) == true. An error is returned if the
 // configmap fails to retrieve the releases.
+// 如果filter release的值是true，则获取并返回所有Release
+// 如果ConfigMap未能找到对应的Release，则返回error
 func (cfgmaps *ConfigMaps) List(filter func(*rspb.Release) bool) ([]*rspb.Release, error) {
+	// 使用OWNER:TILLER作为标签在kube-system命名空间下查询对应的ConfigMap
 	lsel := kblabels.Set{"OWNER": "TILLER"}.AsSelector()
 	opts := metav1.ListOptions{LabelSelector: lsel.String()}
 
@@ -99,12 +102,15 @@ func (cfgmaps *ConfigMaps) List(filter func(*rspb.Release) bool) ([]*rspb.Releas
 
 	// iterate over the configmaps object list
 	// and decode each release
+	// 遍历configmap对象列表并解码每个Release
 	for _, item := range list.Items {
+		// 将ConfigMap中的内容解码。
 		rls, err := decodeRelease(item.Data["release"])
 		if err != nil {
 			cfgmaps.Log("list: failed to decode release: %v: %s", item, err)
 			continue
 		}
+		// 转换为Release结构体后返回前端。
 		if filter(rls) {
 			results = append(results, rls)
 		}

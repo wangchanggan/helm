@@ -388,6 +388,7 @@ func (h *Client) connect(ctx context.Context) (conn *grpc.ClientConn, err error)
 
 // list executes tiller.ListReleases RPC.
 func (h *Client) list(ctx context.Context, req *rls.ListReleasesRequest) (*rls.ListReleasesResponse, error) {
+	// 首先创建连接Tiller的grpc客户端。
 	c, err := h.connect(ctx)
 	if err != nil {
 		return nil, err
@@ -395,11 +396,13 @@ func (h *Client) list(ctx context.Context, req *rls.ListReleasesRequest) (*rls.L
 	defer c.Close()
 
 	rlc := rls.NewReleaseServiceClient(c)
+	// 请求Tiller的rlc.ListReleases接口。
 	s, err := rlc.ListReleases(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 	var resp *rls.ListReleasesResponse
+	// 循环接受Tiller返回的Release。
 	for {
 		r, err := s.Recv()
 		if err == io.EOF {
@@ -412,6 +415,7 @@ func (h *Client) list(ctx context.Context, req *rls.ListReleasesRequest) (*rls.L
 			resp = r
 			continue
 		}
+		// 由于Release列表比较多，所以将每次获取的Release拼接成数组最终返回。
 		resp.Releases = append(resp.Releases, r.GetReleases()...)
 	}
 	return resp, nil

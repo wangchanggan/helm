@@ -147,6 +147,8 @@ func newListCmd(client helm.Interface, out io.Writer) *cobra.Command {
 }
 
 func (l *listCmd) run() error {
+	// 状态和查询参数设置， 主要目的是限制每次查询返回结果的数量，然后规定以哪种方式对结果排序
+	// 同时还支持按照状态来返回在询的结果，设置根据命名空间查询
 	sortBy := services.ListSort_NAME
 	if l.byDate {
 		sortBy = services.ListSort_LAST_RELEASED

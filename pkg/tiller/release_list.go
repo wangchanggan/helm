@@ -28,11 +28,13 @@ import (
 
 // ListReleases lists the releases found by the server.
 func (s *ReleaseServer) ListReleases(req *services.ListReleasesRequest, stream services.ReleaseService_ListReleasesServer) error {
+	// 检查客户端需要查询的Release状态码。
 	if len(req.StatusCodes) == 0 {
 		req.StatusCodes = []release.Status_Code{release.Status_DEPLOYED}
 	}
 
 	//rels, err := s.env.Releases.ListDeployed()
+	// 调用s.env.Releases.ListFilterAll查询对应的Release。
 	rels, err := s.env.Releases.ListFilterAll(func(r *release.Release) bool {
 		for _, sc := range req.StatusCodes {
 			if sc == r.Info.Status.Code {
@@ -45,6 +47,7 @@ func (s *ReleaseServer) ListReleases(req *services.ListReleasesRequest, stream s
 		return err
 	}
 
+	// 根据命名空间判断是否是需要的Release。
 	if req.Namespace != "" {
 		rels, err = filterByNamespace(req.Namespace, rels)
 		if err != nil {
@@ -52,6 +55,7 @@ func (s *ReleaseServer) ListReleases(req *services.ListReleasesRequest, stream s
 		}
 	}
 
+	// 根据客户端传递来的过滤值进行对应的过滤。
 	if len(req.Filter) != 0 {
 		rels, err = filterReleases(req.Filter, rels)
 		if err != nil {
@@ -61,6 +65,7 @@ func (s *ReleaseServer) ListReleases(req *services.ListReleasesRequest, stream s
 
 	total := int64(len(rels))
 
+	// 根据客户端传递过来的排序方法进行排序。
 	switch req.SortBy {
 	case services.ListSort_NAME:
 		relutil.SortByName(rels)
