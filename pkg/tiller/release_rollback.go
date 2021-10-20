@@ -94,6 +94,7 @@ func (s *ReleaseServer) prepareRollback(req *services.RollbackReleaseRequest) (*
 	}
 
 	// Store a new release object with previous release's configuration
+	// 重新定义一个具有前一个Release配置的新Release
 	targetRelease := &release.Release{
 		Name:      req.Name,
 		Namespace: currentRelease.Namespace,
@@ -108,6 +109,7 @@ func (s *ReleaseServer) prepareRollback(req *services.RollbackReleaseRequest) (*
 			},
 			// Because we lose the reference to previous version elsewhere, we set the
 			// message here, and only override it later if we experience failure.
+			// 因为在其他地方丢失了对以前版本的引用，所以在这里设置了消息，只有在遇到失败时才会覆盖它
 			Description: description,
 		},
 		Version:  currentRelease.Version + 1,

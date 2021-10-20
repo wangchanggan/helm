@@ -24,6 +24,7 @@ Source Code From https://github.com/helm/helm/archive/refs/tags/v2.17.0.tar.gz
     -   [Helm Ls](#helm-ls)
         -   [Client端实现](#client端实现)
         -   [Server端实现](#server端实现)
+    -   [Helm Rollback](#helm-rollback)
 
 ## Helm Install Client
 cmd/helm/install.go:172
@@ -152,3 +153,18 @@ pkg\helm\client.go:390
 pkg\tiller\release_list.go:30
 
 pkg\storage\driver\cfgmaps.go:90
+
+## Helm Rollback
+pkg\tiller\release_rollback.go:64
+
+pkg\tiller\release_rollback.go:123
+
+1.检查传递的Release名称是否符合规则。
+
+2.根据传递的需要，回滚版本号来确定目标版本。
+
+3.根据版本号去configmap中读取对应的版本号信息。
+
+4.将读取到的版本号信息格式化成对应的Release结构体。
+
+5.拼装成结构体后返回。
