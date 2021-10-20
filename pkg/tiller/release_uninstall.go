@@ -36,6 +36,7 @@ func (s *ReleaseServer) UninstallRelease(c ctx.Context, req *services.UninstallR
 		return nil, err
 	}
 
+	// 首先根据传递过来的参数去configmap中获取对应的Release对象，不同的是，这里获取的是一个列表，把该名称下的Release所有的历史记录都取回来
 	rels, err := s.env.Releases.History(req.Name)
 	if err != nil {
 		s.Log("uninstall: Release not loaded: %s", req.Name)
@@ -50,6 +51,7 @@ func (s *ReleaseServer) UninstallRelease(c ctx.Context, req *services.UninstallR
 
 	// TODO: Are there any cases where we want to force a delete even if it's
 	// already marked deleted?
+	// 如果上一次没有强制删除，即么这一次就有要判断是否会对已经制除过的Release进行强制副除操作
 	if rel.Info.Status.Code == release.Status_DELETED {
 		if req.Purge {
 			if err := s.purgeReleases(rels...); err != nil {
@@ -67,6 +69,8 @@ func (s *ReleaseServer) UninstallRelease(c ctx.Context, req *services.UninstallR
 	rel.Info.Description = "Deletion in progress (or silently failed)"
 	res := &services.UninstallReleaseResponse{Release: rel}
 
+	// 针对删除时需要执行的Hooks. 所有删除资源时需要执行的Hooks都是在这个函数下进行操作的
+	// 如果用户指定了不执行Hooks，那么就会直接进行到下一步
 	if !req.DisableHooks {
 		if err := s.execHook(rel.Hooks, rel.Name, rel.Namespace, hooks.PreDelete, req.Timeout); err != nil {
 			return res, err
@@ -77,10 +81,12 @@ func (s *ReleaseServer) UninstallRelease(c ctx.Context, req *services.UninstallR
 
 	// From here on out, the release is currently considered to be in Status_DELETING
 	// state.
+	// 这里首先标记Release的状态为删除中。有时删除资源的进程会比较长，所以先将状态置为删除中
 	if err := s.env.Releases.Update(rel); err != nil {
 		s.Log("uninstall: Failed to store updated release: %s", err)
 	}
 
+	// 进行真正的删除操作，主要是将Chart指定的资源进行移除，类比于kubectl delete -f，但是最终会留下真正的Release信息
 	kept, errs := s.ReleaseModule.Delete(rel, req, s.env)
 	res.Info = kept
 
@@ -103,6 +109,7 @@ func (s *ReleaseServer) UninstallRelease(c ctx.Context, req *services.UninstallR
 		rel.Info.Description = req.Description
 	}
 
+	// 如果指定了强制删除，就会将资源和Release信息一并删除
 	if req.Purge {
 		s.Log("purge requested for %s", req.Name)
 		err := s.purgeReleases(rels...)

@@ -25,6 +25,7 @@ Source Code From https://github.com/helm/helm/archive/refs/tags/v2.17.0.tar.gz
         -   [Client端实现](#client端实现)
         -   [Server端实现](#server端实现)
     -   [Helm Rollback](#helm-rollback)
+    -   [Helm Delete](#helm-delete)
 
 ## Helm Install Client
 cmd/helm/install.go:172
@@ -168,3 +169,18 @@ pkg\tiller\release_rollback.go:123
 4.将读取到的版本号信息格式化成对应的Release结构体。
 
 5.拼装成结构体后返回。
+
+## Helm Delete
+pkg\tiller\release_uninstall.go:33
+
+1.检查传递的名称是否符合规范。
+
+2.根据Release的名称查询其所有的历史记录。
+
+3.将Release的状态置为删除中。
+
+4.执行Release中声明的Hooks。
+
+5.删除Release中的所有资源。
+
+6.如果指定了强制删除，那么也会把Release信息一并删除掉，这里指的就是configmap。
